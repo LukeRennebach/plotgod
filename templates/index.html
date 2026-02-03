@@ -1,0 +1,764 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Plotgod – Session Setup</title>
+
+    <!-- Simple “D&D book-ish” fonts (free Google fonts). -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IM+Fell+English:ital@0;1&family=Merriweather:wght@300;400;700&display=swap"
+      rel="stylesheet"
+    />
+
+    <style>
+      :root {
+         --paper: #f6f0e3;
+         --paper-2: #efe2c8;
+         --ink: #1f1713;
+         --muted: #5a4c43;
+
+         /* Blut-/Weinrot */
+         --red: #5b0b10;
+         --red-2: #7a1017;
+
+        --border: rgba(45, 30, 22, 0.28);
+        --shadow: 0 10px 26px rgba(0, 0, 0, 0.14);
+      }
+
+      html, body {
+        height: 100%;
+      }
+
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        color: var(--ink);
+
+        /* Parchment background: overlay + image */
+        background-color: var(--paper);
+        background-image:
+          linear-gradient(rgba(246, 240, 227, 0.88), rgba(246, 240, 227, 0.88)),
+          url("/static/img/parchment.jpg");
+        background-size: cover;
+        background-position: center;
+        background-attachment: fixed;
+
+        font-family: "Merriweather", serif;
+      }
+
+      .wrap {
+        max-width: 860px;
+        margin: 0 auto;
+        padding: 28px 18px 44px;
+      }
+
+      .header {
+        text-align: center;
+        margin-bottom: 18px;
+      }
+
+      h1 {
+        font-family: "IM Fell English", serif;
+        margin: 0 0 6px;
+        font-size: 40px;
+        letter-spacing: 0.3px;
+        color: var(--red);
+      }
+
+      .subtitle {
+        margin: 0;
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .card {
+        background: rgba(255, 255, 255, 0.28);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        box-shadow: var(--shadow);
+        padding: 16px;
+        margin: 14px 0;
+        backdrop-filter: blur(1px);
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 18px;
+      }
+
+      label {
+        display: block;
+        font-family: "IM Fell English", serif;
+        color: var(--red-2);
+        font-size: 18px;
+        margin: 0 0 6px;
+      }
+
+      .help {
+        font-size: 12px;
+        color: var(--muted);
+        margin: 6px 0 0;
+        line-height: 1.35;
+      }
+
+      .section {
+        padding-top: 6px;
+      }
+
+      .section + .section {
+        border-top: 1px solid rgba(45, 30, 22, 0.10);
+        padding-top: 18px;
+      }
+
+      select {
+        width: 100%;
+        min-height: 42px;
+        padding: 10px;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.6);
+        font-family: "Merriweather", serif;
+        font-size: 14px;
+        color: var(--ink);
+        outline: none;
+      }
+
+
+      /* Clickable list (nicer than a native <select> listbox) */
+      .picklist {
+        min-height: 160px;
+        max-height: 220px;
+        overflow: auto;
+        padding: 6px;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.45);
+      }
+
+      .pickitem {
+        display: block;
+        width: 100%;
+        text-align: left;
+        border: 1px solid rgba(60, 40, 30, 0.12);
+        background: rgba(255, 255, 255, 0.55);
+        border-radius: 10px;
+        padding: 10px 10px;
+        margin: 6px 0;
+        font-family: "Merriweather", serif;
+        font-size: 14px;
+        color: var(--ink);
+        cursor: pointer;
+        user-select: none;
+      }
+
+      .pickitem:hover {
+        border-color: rgba(123, 31, 31, 0.35);
+      }
+
+      .pickitem:active {
+        transform: translateY(1px);
+      }
+
+      .pickitem-muted {
+        color: var(--muted);
+        border-style: dashed;
+        background: rgba(255, 255, 255, 0.35);
+        cursor: default;
+      }
+
+      .selected-box {
+        margin-top: 10px;
+        min-height: 74px;
+        padding: 10px;
+        border-radius: 12px;
+        border: 1px dashed var(--border);
+        background: rgba(255, 255, 255, 0.35);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: flex-start;
+      }
+
+      .selected-hint {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.3;
+      }
+
+      .chip {
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.55);
+        border-radius: 999px;
+        padding: 6px 10px;
+        font-family: "IM Fell English", serif;
+        color: var(--red);
+        cursor: pointer;
+        user-select: none;
+      }
+
+      .chip:hover {
+        border-color: rgba(123, 31, 31, 0.55);
+      }
+
+      .btn-primary {
+        background: rgba(123, 31, 31, 0.12);
+        border-color: rgba(123, 31, 31, 0.45);
+        color: var(--red);
+        font-weight: 700;
+      }
+
+      .row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+
+      .pill {
+        display: inline-block;
+        padding: 4px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.5);
+        font-family: "IM Fell English", serif;
+        color: var(--red);
+        font-size: 14px;
+        white-space: nowrap;
+      }
+
+      .pill.small {
+        font-size: 12px;
+        padding: 3px 8px;
+      }
+
+      textarea {
+        width: 100%;
+        box-sizing: border-box;
+        min-height: 220px;
+        padding: 12px;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.55);
+        color: var(--ink);
+        font-family: "Merriweather", serif;
+        font-size: 14px;
+        line-height: 1.5;
+        outline: none;
+        resize: vertical;
+      }
+
+      textarea[readonly] {
+        opacity: 0.95;
+      }
+
+      .btn {
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.55);
+        border-radius: 12px;
+        padding: 8px 12px;
+        font-family: "IM Fell English", serif;
+        color: var(--red);
+        cursor: pointer;
+      }
+
+      .btn:hover {
+        border-color: rgba(123, 31, 31, 0.55);
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="wrap">
+      <div class="header">
+        <h1>Session Setup</h1>
+        <p class="subtitle">
+          Choose a campaign, then pick party members, NPCs and locations. The last session is loaded automatically.
+        </p>
+      </div>
+
+      {% if error %}
+        <div class="card error"><strong>Error:</strong> {{ error }}</div>
+      {% endif %}
+
+      <div class="card">
+        <div class="grid">
+          <div class="section">
+            <label for="campaignSelect">Campaign</label>
+            <select id="campaignSelect" aria-label="Campaign">
+              {% if campaigns and campaigns|length > 0 %}
+                <option value="" selected disabled>-- Select a campaign --</option>
+                {% for c in campaigns %}
+                  <option value="{{ c.id }}">{{ c.name }}</option>
+                {% endfor %}
+              {% else %}
+                <option value="" selected disabled>No campaigns found (add one via /api/campaigns)</option>
+              {% endif %}
+            </select>
+            <p class="help">This dropdown is server-rendered for simplicity. The other dropdowns load dynamically via the API.</p>
+          </div>
+
+          <div class="section">
+            <div class="row">
+              <label for="partyList">Party Members</label>
+              <div class="row" style="justify-content: flex-end; gap: 8px;">
+                <button type="button" class="btn" id="partySelectAllBtn">Select all</button>
+                <span class="pill" id="partyCount">0 selected</span>
+              </div>
+            </div>
+
+            <div id="partyList" class="picklist" aria-label="Available Party Members"></div>
+            <p class="help">Click a party member to add them to your selection.</p>
+
+            <div class="selected-box" id="partySelected" aria-label="Selected Party Members">
+              <div class="selected-hint">Selected party members will appear here…</div>
+            </div>
+            <p class="help">Click a selected party member to remove them.</p>
+          </div>
+
+          <div class="section">
+            <div class="row">
+              <label for="locationList">Locations</label>
+              <span class="pill" id="locLimit">0 / 3</span>
+            </div>
+
+            <div id="locationList" class="picklist" aria-label="Available Locations"></div>
+            <p class="help">Click a location to add it to your selection (max 3).</p>
+
+            <div class="selected-box" id="locationSelected" aria-label="Selected Locations">
+              <div class="selected-hint">Selected locations will appear here…</div>
+            </div>
+            <p class="help">Click a selected location to remove it.</p>
+          </div>
+
+          <div class="section">
+            <div class="row">
+              <label for="npcList">NPCs</label>
+              <span class="pill" id="npcLimit">0 / 5</span>
+            </div>
+
+            <div id="npcList" class="picklist" aria-label="Available NPCs"></div>
+            <p class="help">Click an NPC to add them to your selection (max 5).</p>
+
+            <div class="selected-box" id="npcSelected" aria-label="Selected NPCs">
+              <div class="selected-hint">Selected NPCs will appear here…</div>
+            </div>
+            <p class="help">Click a selected NPC to remove it.</p>
+          </div>
+
+          <div class="section">
+            <div class="row" style="margin-bottom: 10px;">
+              <label for="lastSessionText" style="margin: 0;">Last Session (auto-loaded)</label>
+              <span class="pill small" id="lastSessionMeta">—</span>
+            </div>
+            <textarea
+              id="lastSessionText"
+              placeholder="Select a campaign to load the last session..."
+            ></textarea>
+            <p class="help">You can edit this text before continuing. Later we can store it back to the database.</p>
+          </div>
+        </div>
+
+        <p class="status" id="statusLine">Choose a campaign to load party members, NPCs, and the last session.</p>
+
+        <form id="continueForm" method="POST" action="/overview" style="margin-top: 14px;">
+          <input type="hidden" name="campaign_id" id="formCampaignId" value="" />
+          <input type="hidden" name="party_ids" id="formPartyIds" value="" />
+          <input type="hidden" name="npc_ids" id="formNpcIds" value="" />
+          <input type="hidden" name="location_ids" id="formLocationIds" value="" />
+          <input type="hidden" name="last_session_text" id="formLastSessionText" value="" />
+
+          <div style="display:flex; justify-content:center; margin-top: 10px;">
+            <button type="submit" class="btn btn-primary" id="continueBtn">Continue → Overview</button>
+          </div>
+          <p class="help" style="text-align:center; margin-top: 8px;">This sends your current selections to the next page.</p>
+        </form>
+      </div>
+
+    </div>
+
+    <script>
+      function setStatus(msg) {
+        document.getElementById("statusLine").textContent = msg;
+      }
+
+
+      function selectedCount(arr) {
+        return Array.isArray(arr) ? arr.length : 0;
+      }
+
+      async function fetchJson(url) {
+        const resp = await fetch(url, { headers: { "Accept": "application/json" } });
+        const data = await resp.json();
+        if (!resp.ok || data.ok === false) {
+          const msg = data && data.error ? data.error : `Request failed: ${resp.status}`;
+          throw new Error(msg);
+        }
+        return data;
+      }
+
+      // ------------------------------
+      // Selection state (IDs + labels)
+      // ------------------------------
+      let selectedLocations = []; // [{id, label}]
+      let selectedParty = [];     // [{id, label}]
+      let selectedNpcs = [];      // [{id, label}]
+
+      function renderSelected(containerId, items, emptyText) {
+        const box = document.getElementById(containerId);
+        box.innerHTML = "";
+
+        if (!items || items.length === 0) {
+          const hint = document.createElement("div");
+          hint.className = "selected-hint";
+          hint.textContent = emptyText;
+          box.appendChild(hint);
+          return;
+        }
+
+        for (const it of items) {
+          const chip = document.createElement("div");
+          chip.className = "chip";
+          chip.textContent = it.label;
+          chip.title = "Click to remove";
+          chip.addEventListener("click", () => {
+            removeSelected(containerId, it.id);
+          });
+          box.appendChild(chip);
+        }
+      }
+
+      function removeSelected(kind, id) {
+        if (kind === "locationSelected") {
+          selectedLocations = selectedLocations.filter((x) => x.id !== id);
+          renderSelected("locationSelected", selectedLocations, "Selected locations will appear here…");
+        } else if (kind === "partySelected") {
+          selectedParty = selectedParty.filter((x) => x.id !== id);
+          renderSelected("partySelected", selectedParty, "Selected party members will appear here…");
+        } else if (kind === "npcSelected") {
+          selectedNpcs = selectedNpcs.filter((x) => x.id !== id);
+          renderSelected("npcSelected", selectedNpcs, "Selected NPCs will appear here…");
+        }
+        updateCounts();
+      }
+
+
+      function addItem(itemsArray, id, label, maxAllowed) {
+        if (!id) {
+          return;
+        }
+
+        // Prevent duplicates
+        if (itemsArray.some((x) => x.id === id)) {
+          return;
+        }
+
+        if (typeof maxAllowed === "number" && itemsArray.length >= maxAllowed) {
+          setStatus(`Selection limit reached (${maxAllowed}). Remove one to add another.`);
+          return;
+        }
+
+        itemsArray.push({ id, label });
+        updateCounts();
+      }
+
+      function resetSelections() {
+        selectedLocations = [];
+        selectedParty = [];
+        selectedNpcs = [];
+        renderSelected("locationSelected", selectedLocations, "Selected locations will appear here…");
+        renderSelected("partySelected", selectedParty, "Selected party members will appear here…");
+        renderSelected("npcSelected", selectedNpcs, "Selected NPCs will appear here…");
+        updateCounts();
+      }
+
+      function selectAllPartyMembers() {
+        const partyList = document.getElementById("partyList");
+        selectedParty = [];
+
+        if (!partyList) {
+          return;
+        }
+
+        const items = Array.from(partyList.querySelectorAll(".pickitem"));
+        for (const item of items) {
+          if (item.classList.contains("pickitem-muted")) {
+            continue;
+          }
+          const id = item.dataset.id;
+          const label = item.dataset.label || item.textContent;
+          if (!id) {
+            continue;
+          }
+          selectedParty.push({ id: String(id), label: String(label) });
+        }
+
+        renderSelected("partySelected", selectedParty, "Selected party members will appear here…");
+        updateCounts();
+      }
+
+      function fillContinueForm() {
+        const campaignId = document.getElementById("campaignSelect").value;
+        document.getElementById("formCampaignId").value = campaignId || "";
+        document.getElementById("formPartyIds").value = selectedParty.map((x) => x.id).join(",");
+        document.getElementById("formNpcIds").value = selectedNpcs.map((x) => x.id).join(",");
+        document.getElementById("formLocationIds").value = selectedLocations.map((x) => x.id).join(",");
+        document.getElementById("formLastSessionText").value = document.getElementById("lastSessionText").value || "";
+      }
+
+      async function loadLocations() {
+        const list = document.getElementById("locationList");
+        if (!list) {
+          return;
+        }
+
+        list.innerHTML = "";
+        const loading = document.createElement("div");
+        loading.className = "pickitem pickitem-muted";
+        loading.textContent = "Loading locations...";
+        list.appendChild(loading);
+
+        try {
+          const data = await fetchJson("/api/locations");
+          const locations = data.locations || [];
+
+          list.innerHTML = "";
+
+          if (locations.length === 0) {
+            const empty = document.createElement("div");
+            empty.className = "pickitem pickitem-muted";
+            empty.textContent = "No locations found";
+            list.appendChild(empty);
+            return;
+          }
+
+          for (const loc of locations) {
+            const btn = document.createElement("div");
+            btn.className = "pickitem";
+            btn.dataset.id = String(loc.id);
+
+            const type = loc.location_type ? ` (${loc.location_type})` : "";
+            btn.dataset.label = `${loc.name}${type}`;
+            btn.textContent = btn.dataset.label;
+
+            list.appendChild(btn);
+          }
+
+          renderSelected("locationSelected", selectedLocations, "Selected locations will appear here…");
+          updateCounts();
+        } catch (err) {
+          list.innerHTML = "";
+          const error = document.createElement("div");
+          error.className = "pickitem pickitem-muted";
+          error.textContent = "Error loading locations";
+          list.appendChild(error);
+          setStatus(`Locations error: ${err.message}`);
+        }
+      }
+
+      async function loadCampaignData(campaignId) {
+        const partyList = document.getElementById("partyList");
+        const npcList = document.getElementById("npcList");
+        const lastSessionText = document.getElementById("lastSessionText");
+        const meta = document.getElementById("lastSessionMeta");
+
+        // Reset UI
+        if (partyList) {
+          partyList.innerHTML = "";
+          const loadingParty = document.createElement("div");
+          loadingParty.className = "pickitem pickitem-muted";
+          loadingParty.textContent = "Loading party members...";
+          partyList.appendChild(loadingParty);
+        }
+
+        if (npcList) {
+          npcList.innerHTML = "";
+          const loadingNpc = document.createElement("div");
+          loadingNpc.className = "pickitem pickitem-muted";
+          loadingNpc.textContent = "Loading NPCs...";
+          npcList.appendChild(loadingNpc);
+        }
+
+        lastSessionText.value = "";
+        meta.textContent = "loading...";
+
+        resetSelections();
+
+        setStatus("Loading campaign data...");
+
+        try {
+          const [partyData, npcData, lastData] = await Promise.all([
+            fetchJson(`/api/campaigns/${campaignId}/party`),
+            fetchJson(`/api/campaigns/${campaignId}/npcs`),
+            fetchJson(`/api/campaigns/${campaignId}/last-session`),
+          ]);
+
+          // Party (render into picklist)
+          const members = partyData.party_members || [];
+          if (partyList) {
+            partyList.innerHTML = "";
+            if (members.length === 0) {
+              const emptyParty = document.createElement("div");
+              emptyParty.className = "pickitem pickitem-muted";
+              emptyParty.textContent = "No party members found";
+              partyList.appendChild(emptyParty);
+            } else {
+              for (const m of members) {
+                const item = document.createElement("div");
+                item.className = "pickitem";
+                item.dataset.id = String(m.id);
+
+                const sp = m.character_species ? ` – ${m.character_species}` : "";
+                const cls = m.character_class ? ` – ${m.character_class}` : "";
+                const lvl = m.level ? ` (Lv ${m.level})` : "";
+
+                item.dataset.label = `${m.name}${sp}${cls}${lvl}`;
+                item.textContent = item.dataset.label;
+                partyList.appendChild(item);
+              }
+            }
+          }
+
+          // NPCs (render into picklist)
+          const npcs = npcData.npcs || [];
+          if (npcList) {
+            npcList.innerHTML = "";
+            if (npcs.length === 0) {
+              const emptyNpc = document.createElement("div");
+              emptyNpc.className = "pickitem pickitem-muted";
+              emptyNpc.textContent = "No NPCs found";
+              npcList.appendChild(emptyNpc);
+            } else {
+              for (const n of npcs) {
+                const item = document.createElement("div");
+                item.className = "pickitem";
+                item.dataset.id = String(n.id);
+                const sp = n.species ? ` – ${n.species}` : "";
+                const g = n.gender ? ` – ${n.gender}` : "";
+                item.dataset.label = `${n.name}${sp}${g}`;
+                item.textContent = item.dataset.label;
+                npcList.appendChild(item);
+              }
+            }
+          }
+
+          // Last session
+          const campaignName = lastData.campaign && lastData.campaign.name ? lastData.campaign.name : "";
+          meta.textContent = campaignName ? `Campaign: ${campaignName}` : "—";
+          lastSessionText.value = (lastData.last_session_text || "").trim();
+          if (!lastSessionText.value) {
+            lastSessionText.value = "(No session stored yet for this campaign.)";
+          }
+
+          setStatus("Ready. Adjust selections as needed.");
+          updateCounts();
+        } catch (err) {
+          setStatus(`Campaign load error: ${err.message}`);
+          meta.textContent = "error";
+          lastSessionText.value = "";
+        }
+      }
+
+      function updateCounts() {
+        document.getElementById("partyCount").textContent = `${selectedCount(selectedParty)} selected`;
+        document.getElementById("npcLimit").textContent = `${selectedCount(selectedNpcs)} / 5`;
+        document.getElementById("locLimit").textContent = `${selectedCount(selectedLocations)} / 3`;
+      }
+
+      document.addEventListener("DOMContentLoaded", async () => {
+        const campaignSelect = document.getElementById("campaignSelect");
+        const npcList = document.getElementById("npcList");
+        const locationList = document.getElementById("locationList");
+        const partyList = document.getElementById("partyList");
+
+        // Render empty selected boxes on first load
+        resetSelections();
+
+        // Load locations right away (locations are global, not campaign-specific)
+        await loadLocations();
+
+        campaignSelect.addEventListener("change", (e) => {
+          const campaignId = e.target.value;
+          if (!campaignId) {
+            return;
+          }
+          loadCampaignData(campaignId);
+        });
+
+        // Click-to-add behavior for locations (picklist)
+        if (locationList) {
+          locationList.addEventListener("click", (e) => {
+            const item = e.target.closest(".pickitem");
+            if (!item || item.classList.contains("pickitem-muted")) {
+              return;
+            }
+            const id = item.dataset.id;
+            const label = item.dataset.label || item.textContent;
+            addItem(selectedLocations, String(id), String(label), 3);
+            renderSelected("locationSelected", selectedLocations, "Selected locations will appear here…");
+          });
+        }
+
+        // Click-to-add behavior for NPCs (picklist)
+        if (npcList) {
+          npcList.addEventListener("click", (e) => {
+            const item = e.target.closest(".pickitem");
+            if (!item || item.classList.contains("pickitem-muted")) {
+              return;
+            }
+            const id = item.dataset.id;
+            const label = item.dataset.label || item.textContent;
+            addItem(selectedNpcs, String(id), String(label), 5);
+            renderSelected("npcSelected", selectedNpcs, "Selected NPCs will appear here…");
+          });
+        }
+
+        // Click-to-add behavior for Party Members (picklist)
+        if (partyList) {
+          partyList.addEventListener("click", (e) => {
+            const item = e.target.closest(".pickitem");
+            if (!item || item.classList.contains("pickitem-muted")) {
+              return;
+            }
+            const id = item.dataset.id;
+            const label = item.dataset.label || item.textContent;
+            addItem(selectedParty, String(id), String(label), null);
+            renderSelected("partySelected", selectedParty, "Selected party members will appear here…");
+          });
+        }
+
+        const partySelectAllBtn = document.getElementById("partySelectAllBtn");
+        if (partySelectAllBtn) {
+          partySelectAllBtn.addEventListener("click", () => {
+            selectAllPartyMembers();
+            setStatus("All party members selected.");
+          });
+        }
+
+        const continueForm = document.getElementById("continueForm");
+        if (continueForm) {
+          continueForm.addEventListener("submit", (e) => {
+            const campaignId = campaignSelect.value;
+            if (!campaignId) {
+              e.preventDefault();
+              setStatus("Please select a campaign before continuing.");
+              return;
+            }
+            fillContinueForm();
+          });
+        }
+
+        // Initial counts
+        updateCounts();
+      });
+    </script>
+  </body>
+</html>

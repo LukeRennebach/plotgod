@@ -1,0 +1,12 @@
+# secrets
+.env
+.env.*
+!.env.example
+
+# pycharm
+.idea/
+
+# python
+.venv/
+__pycache__/
+*.pyc
