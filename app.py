@@ -7,7 +7,7 @@ from flask import Flask, jsonify, redirect, render_template, request, url_for
 from openai import OpenAI
 
 import data_mgr
-from prompts.session_prep_prompt import SYSTEM_PROMPT, build_user_prompt
+from prompts.session_prep_prompt import SYSTEM_PROMPT, build_refine_prompt, build_user_prompt
 
 # Load environment variables from a .env file
 load_dotenv()
@@ -15,7 +15,7 @@ load_dotenv()
 app = Flask(__name__)
 
 # OpenAI config
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.1")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5-mini")
 
 # The OpenAI SDK will also read OPENAI_API_KEY from your environment.
 # If you want, you can set it in .env as: OPENAI_API_KEY=...
@@ -23,13 +23,13 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 
 # -------------------------
-# Validation helpers (Unicode-friendly)
+# Validation helpers 
 # -------------------------
 
 # Allowed punctuation for "name-like" fields.
 _ALLOWED_NAME_PUNCT = {
     " ", "-", "_", ".", ",", ":", ";",
-    "'", "’",  # straight + curly apostrophe
+    "'", "’",
     "(", ")", "[", "]",
     "&", "/",
 }
@@ -99,6 +99,7 @@ def _clean_name(value, field_name, max_len=150, required=True):
 
 
 def _clean_int(value, field_name, required=False, min_value=None, max_value=None):
+    """Check if a value is a valid number and within range."""
     value = ("" if value is None else str(value)).strip()
 
     if required and not value:
@@ -147,6 +148,34 @@ def _clean_long_text(value, field_name, max_len=50000, required=False):
     return value
 
 
+def _parse_id_list(value, field_name):
+    """Parse a comma-separated list of IDs into a list of ints (deduped)."""
+    value = (value or "").strip()
+    if not value:
+        return []
+
+    ids = []
+    seen = set()
+    for raw in value.split(","):
+        raw = raw.strip()
+        if not raw:
+            continue
+        try:
+            number = int(raw)
+        except ValueError as exc:
+            raise ValueError(f"{field_name} must be a comma-separated list of numbers.") from exc
+
+        if number < 0:
+            raise ValueError(f"{field_name} must be positive numbers.")
+
+        if number in seen:
+            continue
+        seen.add(number)
+        ids.append(number)
+
+    return ids
+
+
 def _payload():
     """Read JSON if present, otherwise fall back to form data."""
     if request.is_json:
@@ -155,6 +184,7 @@ def _payload():
 
 
 def _ok(data=None, status=200):
+    """Return a successful JSON response."""
     body = {"ok": True}
     if data:
         body.update(data)
@@ -162,6 +192,7 @@ def _ok(data=None, status=200):
 
 
 def _err(message, status=400):
+    """Return an error JSON response."""
     return jsonify({"ok": False, "error": message}), status
 
 
@@ -189,10 +220,27 @@ def call_chatgpt(user_prompt):
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": user_prompt},
             ],
-            temperature=0.8,
-            max_tokens=2000,
+            # GPT-5 models can spend all tokens on reasoning. Increase the limit
+            # so we still get a visible answer.
+            reasoning_effort="minimal",
+            max_completion_tokens=16000,
         )
-        return response.choices[0].message.content
+        # Defensive parsing: some model responses can be empty or structured differently.
+        content = None
+        if response.choices:
+            message = response.choices[0].message
+            content = getattr(message, "content", None)
+
+        if content:
+            return content
+
+        # Log full response for debugging in the terminal.
+        try:
+            print("OpenAI response was empty. Full response:", response.model_dump())
+        except Exception:
+            print("OpenAI response was empty. Raw response object:", response)
+
+        return "Empty response from OpenAI (no message content). Check server logs for the full response."
     except Exception as exc:
         # Keep it simple for beginners: return an error message the UI can show.
         return f"Error calling OpenAI: {exc}"
@@ -240,7 +288,13 @@ def generate_session():
     campaign_name = campaign_data.get("name", f"Campaign {campaign_id_int}")
     last_session_text = campaign_data["last_session_text"]
 
-    user_prompt = build_user_prompt(campaign_name, last_session_text)
+    user_prompt = build_user_prompt(
+        campaign_name=campaign_name,
+        party_members=[],
+        npcs=[],
+        locations=[],
+        last_session_text=last_session_text,
+    )
     ai_output = call_chatgpt(user_prompt)
 
     return render_template(
@@ -288,6 +342,7 @@ def api_campaign_last_session(campaign_id):
 
 @app.route("/api/campaigns", methods=["GET"])
 def api_campaigns_list():
+    """Return a list of all campaigns."""
     try:
         campaigns = _require("get_all_campaigns")()
         return _ok({"campaigns": campaigns})
@@ -297,6 +352,7 @@ def api_campaigns_list():
 
 @app.route("/api/campaigns", methods=["POST"])
 def api_campaigns_create():
+    """Create a new campaign."""
     data = _payload()
     try:
         name = _clean_name(data.get("name"), "name", max_len=100, required=True)
@@ -351,6 +407,7 @@ def api_campaigns_delete(campaign_id):
 
 @app.route("/api/campaigns/<int:campaign_id>/sessions", methods=["GET"])
 def api_sessions_list(campaign_id):
+    """Return all sessions for a campaign."""
     try:
         sessions = _require("get_sessions_for_campaign")(campaign_id)
         return _ok({"sessions": sessions})
@@ -360,6 +417,7 @@ def api_sessions_list(campaign_id):
 
 @app.route("/api/campaigns/<int:campaign_id>/sessions", methods=["POST"])
 def api_sessions_create(campaign_id):
+    """Create a new session for a campaign."""
     data = _payload()
     try:
         content = _clean_long_text(data.get("content"), "content", max_len=50000, required=True)
@@ -414,6 +472,7 @@ def api_sessions_delete(campaign_id, session_id):
 
 @app.route("/api/campaigns/<int:campaign_id>/party", methods=["GET"])
 def api_party_list(campaign_id):
+    """Return all party members for a campaign."""
     try:
         members = _require("get_party_members_for_campaign")(campaign_id)
         return _ok({"party_members": members})
@@ -423,6 +482,7 @@ def api_party_list(campaign_id):
 
 @app.route("/api/campaigns/<int:campaign_id>/party", methods=["POST"])
 def api_party_create(campaign_id):
+    """Create a new party member for a campaign."""
     data = _payload()
     try:
         name = _clean_name(data.get("name"), "name", max_len=100, required=True)
@@ -454,6 +514,7 @@ def api_party_create(campaign_id):
 
 @app.route("/api/campaigns/<int:campaign_id>/party/<int:member_id>", methods=["GET"])
 def api_party_get(campaign_id, member_id):
+    """Return a single party member."""
     try:
         member = _require("get_party_member_by_id")(campaign_id, member_id)
         if member is None:
@@ -465,6 +526,7 @@ def api_party_get(campaign_id, member_id):
 
 @app.route("/api/campaigns/<int:campaign_id>/party/<int:member_id>", methods=["POST"])
 def api_party_update(campaign_id, member_id):
+    """Update a party member's information."""
     data = _payload()
     try:
         name = _clean_name(data.get("name"), "name", max_len=100, required=True)
@@ -500,6 +562,7 @@ def api_party_update(campaign_id, member_id):
 
 @app.route("/api/campaigns/<int:campaign_id>/party/<int:member_id>/delete", methods=["POST"])
 def api_party_delete(campaign_id, member_id):
+    """Delete a party member."""
     try:
         deleted = _require("delete_party_member")(campaign_id, member_id)
         if not deleted:
@@ -515,6 +578,7 @@ def api_party_delete(campaign_id, member_id):
 
 @app.route("/api/campaigns/<int:campaign_id>/npcs", methods=["GET"])
 def api_npcs_list(campaign_id):
+    """Return all NPCs for a campaign."""
     try:
         npcs = _require("get_npcs_for_campaign")(campaign_id)
         return _ok({"npcs": npcs})
@@ -524,6 +588,7 @@ def api_npcs_list(campaign_id):
 
 @app.route("/api/campaigns/<int:campaign_id>/npcs", methods=["POST"])
 def api_npcs_create(campaign_id):
+    """Create a new NPC for a campaign."""
     data = _payload()
     try:
         name = _clean_name(data.get("name"), "name", max_len=100, required=True)
@@ -541,6 +606,7 @@ def api_npcs_create(campaign_id):
 
 @app.route("/api/campaigns/<int:campaign_id>/npcs/<int:npc_id>", methods=["GET"])
 def api_npcs_get(campaign_id, npc_id):
+    """Return a single NPC."""
     try:
         npc = _require("get_npc_by_id")(campaign_id, npc_id)
         if npc is None:
@@ -552,6 +618,7 @@ def api_npcs_get(campaign_id, npc_id):
 
 @app.route("/api/campaigns/<int:campaign_id>/npcs/<int:npc_id>", methods=["POST"])
 def api_npcs_update(campaign_id, npc_id):
+    """Update an NPC's information."""
     data = _payload()
     try:
         name = _clean_name(data.get("name"), "name", max_len=100, required=True)
@@ -579,6 +646,7 @@ def api_npcs_update(campaign_id, npc_id):
 
 @app.route("/api/campaigns/<int:campaign_id>/npcs/<int:npc_id>/delete", methods=["POST"])
 def api_npcs_delete(campaign_id, npc_id):
+    """Delete an NPC."""
     try:
         deleted = _require("delete_npc")(campaign_id, npc_id)
         if not deleted:
@@ -594,6 +662,7 @@ def api_npcs_delete(campaign_id, npc_id):
 
 @app.route("/api/locations", methods=["GET"])
 def api_locations_list():
+    """Return a list of all locations."""
     try:
         locations = _require("get_all_locations")()
         return _ok({"locations": locations})
@@ -603,6 +672,7 @@ def api_locations_list():
 
 @app.route("/api/locations", methods=["POST"])
 def api_locations_create():
+    """Create a new location."""
     data = _payload()
     try:
         name = _clean_name(data.get("name"), "name", max_len=150, required=True)
@@ -619,6 +689,7 @@ def api_locations_create():
 
 @app.route("/api/locations/<int:location_id>", methods=["GET"])
 def api_locations_get(location_id):
+    """Return a single location."""
     try:
         loc = _require("get_location_by_id")(location_id)
         if loc is None:
@@ -630,6 +701,7 @@ def api_locations_get(location_id):
 
 @app.route("/api/locations/<int:location_id>", methods=["POST"])
 def api_locations_update(location_id):
+    """Update a location's information."""
     data = _payload()
     try:
         name = _clean_name(data.get("name"), "name", max_len=150, required=True)
@@ -654,6 +726,7 @@ def api_locations_update(location_id):
 
 @app.route("/api/locations/<int:location_id>/delete", methods=["POST"])
 def api_locations_delete(location_id):
+    """Delete a location."""
     try:
         deleted = _require("delete_location")(location_id)
         if not deleted:
@@ -669,26 +742,165 @@ def api_locations_delete(location_id):
 
 @app.route("/overview", methods=["POST"])
 def overview():
-    """Temporary overview placeholder page.
+    """Build a prompt from selected items and show the AI output."""
+    try:
+        campaign_id = _clean_int(
+            request.form.get("campaign_id"),
+            "campaign_id",
+            required=True,
+            min_value=1,
+        )
+        party_ids = _parse_id_list(request.form.get("party_ids"), "party_ids")
+        npc_ids = _parse_id_list(request.form.get("npc_ids"), "npc_ids")
+        location_ids = _parse_id_list(request.form.get("location_ids"), "location_ids")
+        last_session_text = _clean_long_text(
+            request.form.get("last_session_text"),
+            "last_session_text",
+            max_len=50000,
+            required=False,
+        ) or ""
+    except ValueError as exc:
+        return (
+            "<html><body style='font-family: system-ui; max-width: 900px; margin: 24px auto;'>"
+            "<h1>Error</h1>"
+            f"<p>{html.escape(str(exc))}</p>"
+            "<p><a href='/'>← Back</a></p>"
+            "</body></html>"
+        )
 
-    Later we will replace this with a real Jinja template.
-    """
-    campaign_id = (request.form.get("campaign_id") or "").strip()
-    party_ids = (request.form.get("party_ids") or "").strip()
-    npc_ids = (request.form.get("npc_ids") or "").strip()
-    location_ids = (request.form.get("location_ids") or "").strip()
-    last_session_text = (request.form.get("last_session_text") or "").strip()
+    try:
+        campaign = _require("get_campaign_by_id")(campaign_id)
+        if campaign is None:
+            raise RuntimeError("Campaign not found.")
+
+        party_members = _require("get_party_members_by_ids")(campaign_id, party_ids)
+        npcs = _require("get_npcs_by_ids")(campaign_id, npc_ids)
+        locations = _require("get_locations_by_ids")(location_ids)
+    except Exception as exc:
+        return (
+            "<html><body style='font-family: system-ui; max-width: 900px; margin: 24px auto;'>"
+            "<h1>Error</h1>"
+            f"<p>{html.escape(str(exc))}</p>"
+            "<p><a href='/'>← Back</a></p>"
+            "</body></html>"
+        )
+
+    campaign_name = campaign.get("name") or f"Campaign {campaign_id}"
+    user_prompt = build_user_prompt(
+        campaign_name=campaign_name,
+        party_members=party_members,
+        npcs=npcs,
+        locations=locations,
+        last_session_text=last_session_text,
+    )
+    ai_output = call_chatgpt(user_prompt)
+    ai_run_id = None
+    try:
+        ai_run_id = _require("add_ai_run")(
+            campaign_id=campaign_id,
+            party_ids=",".join(str(x) for x in party_ids),
+            npc_ids=",".join(str(x) for x in npc_ids),
+            location_ids=",".join(str(x) for x in location_ids),
+            last_session_text=last_session_text,
+            user_prompt=user_prompt,
+            ai_output_v1=ai_output,
+        )
+    except Exception as exc:
+        # Do not block the user if logging fails; show a small note.
+        print("Warning: could not save ai_run:", exc)
 
     return (
         "<html><body style='font-family: system-ui; max-width: 900px; margin: 24px auto;'>"
-        "<h1>Overview (placeholder)</h1>"
-        "<p>This is a temporary page so you can continue your workflow.</p>"
-        f"<p><strong>Campaign ID:</strong> {html.escape(campaign_id)}</p>"
-        f"<p><strong>Party IDs:</strong> {html.escape(party_ids)}</p>"
-        f"<p><strong>NPC IDs:</strong> {html.escape(npc_ids)}</p>"
-        f"<p><strong>Location IDs:</strong> {html.escape(location_ids)}</p>"
-        "<h2>Last session text</h2>"
-        f"<pre style='white-space: pre-wrap; background:#f7f7f7; padding:12px; border-radius:10px;'>{html.escape(last_session_text)}</pre>"
+        "<h1>Session Prep Output</h1>"
+        f"<p><strong>Campaign:</strong> {html.escape(campaign_name)}</p>"
+        "<h2>AI Output</h2>"
+        f"<pre style='white-space: pre-wrap; background:#f7f7f7; padding:12px; border-radius:10px;'>{html.escape(ai_output)}</pre>"
+        "<h2>Feedback</h2>"
+        "<form method='POST' action='/refine'>"
+        f"<input type='hidden' name='ai_run_id' value='{html.escape(str(ai_run_id or ''))}' />"
+        "<textarea name='feedback_text' style='width:100%; min-height:120px; padding:10px; border-radius:10px; border:1px solid #ddd;'"
+        " placeholder='Dein Feedback zu Vorschlag 1/2/3 ...'></textarea>"
+        "<div style='margin-top:10px;'>"
+        "<button type='submit' style='padding:8px 12px; border-radius:10px; border:1px solid #bbb; background:#f2f2f2;'>"
+        "Refine → Generate V2"
+        "</button>"
+        "</div>"
+        "</form>"
+        "<h2>Prompt (debug)</h2>"
+        f"<pre style='white-space: pre-wrap; background:#f7f7f7; padding:12px; border-radius:10px;'>{html.escape(user_prompt)}</pre>"
+        "<p><a href='/'>← Back</a></p>"
+        "</body></html>"
+    )
+
+
+@app.route("/refine", methods=["POST"])
+def refine_output():
+    """Refine the first AI output based on user feedback."""
+    ai_run_id = (request.form.get("ai_run_id") or "").strip()
+    feedback_text = (request.form.get("feedback_text") or "").strip()
+
+    if not ai_run_id:
+        return (
+            "<html><body style='font-family: system-ui; max-width: 900px; margin: 24px auto;'>"
+            "<h1>Error</h1>"
+            "<p>Missing AI run id. Please generate the first output again.</p>"
+            "<p><a href='/'>← Back</a></p>"
+            "</body></html>"
+        )
+
+    try:
+        ai_run_id_int = int(ai_run_id)
+    except ValueError:
+        return (
+            "<html><body style='font-family: system-ui; max-width: 900px; margin: 24px auto;'>"
+            "<h1>Error</h1>"
+            "<p>Invalid AI run id.</p>"
+            "<p><a href='/'>← Back</a></p>"
+            "</body></html>"
+        )
+
+    try:
+        run = _require("get_ai_run_by_id")(ai_run_id_int)
+        if run is None:
+            raise RuntimeError("AI run not found.")
+    except Exception as exc:
+        return (
+            "<html><body style='font-family: system-ui; max-width: 900px; margin: 24px auto;'>"
+            "<h1>Error</h1>"
+            f"<p>{html.escape(str(exc))}</p>"
+            "<p><a href='/'>← Back</a></p>"
+            "</body></html>"
+        )
+
+    if not feedback_text:
+        return (
+            "<html><body style='font-family: system-ui; max-width: 900px; margin: 24px auto;'>"
+            "<h1>Error</h1>"
+            "<p>Please enter some feedback before refining.</p>"
+            "<p><a href='/'>← Back</a></p>"
+            "</body></html>"
+        )
+
+    refine_prompt = build_refine_prompt(
+        user_prompt=run.get("user_prompt") or "",
+        ai_output_v1=run.get("ai_output_v1") or "",
+        feedback_text=feedback_text,
+    )
+    ai_output_v2 = call_chatgpt(refine_prompt)
+
+    try:
+        _require("update_ai_run_feedback")(ai_run_id_int, feedback_text, ai_output_v2)
+    except Exception as exc:
+        print("Warning: could not update ai_run:", exc)
+
+    return (
+        "<html><body style='font-family: system-ui; max-width: 900px; margin: 24px auto;'>"
+        "<h1>Session Prep Output (V2)</h1>"
+        f"<p><strong>Run ID:</strong> {html.escape(str(ai_run_id_int))}</p>"
+        "<h2>AI Output (V2)</h2>"
+        f"<pre style='white-space: pre-wrap; background:#f7f7f7; padding:12px; border-radius:10px;'>{html.escape(ai_output_v2)}</pre>"
+        "<h2>Feedback</h2>"
+        f"<pre style='white-space: pre-wrap; background:#f7f7f7; padding:12px; border-radius:10px;'>{html.escape(feedback_text)}</pre>"
         "<p><a href='/'>← Back</a></p>"
         "</body></html>"
     )

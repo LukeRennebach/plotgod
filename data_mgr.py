@@ -1,3 +1,7 @@
+"""
+This module handles all database operations for the plotgod application.
+It uses SQLite to store campaigns, sessions, party members, NPCs, and locations.
+"""
 import os
 import sqlite3
 
@@ -101,6 +105,38 @@ def init_db():
         );
         """
     )
+
+    # 6) AI runs (store prompt context and outputs)
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS ai_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            campaign_id INTEGER NOT NULL,
+            party_ids TEXT,
+            npc_ids TEXT,
+            location_ids TEXT,
+            last_session_text TEXT,
+            user_prompt TEXT,
+            ai_output_v1 TEXT,
+            feedback_text TEXT,
+            ai_output_v2 TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (campaign_id) REFERENCES campaigns (id)
+        );
+        """
+    )
+
+    # Lightweight migration: add columns if they don't exist yet.
+    try:
+        existing_cols = {
+            row[1] for row in conn.execute("PRAGMA table_info(ai_runs);").fetchall()
+        }
+        if "feedback_text" not in existing_cols:
+            conn.execute("ALTER TABLE ai_runs ADD COLUMN feedback_text TEXT;")
+        if "ai_output_v2" not in existing_cols:
+            conn.execute("ALTER TABLE ai_runs ADD COLUMN ai_output_v2 TEXT;")
+    except Exception as exc:
+        print("Warning: could not migrate ai_runs table:", exc)
 
     conn.commit()
     conn.close()
@@ -218,6 +254,49 @@ def add_location(name, location_type=None, notes=None):
         VALUES (?, ?, ?);
         """,
         (name, location_type, notes),
+    )
+
+    conn.commit()
+    new_id = result.lastrowid
+    conn.close()
+    return new_id
+
+
+def add_ai_run(
+    campaign_id,
+    party_ids=None,
+    npc_ids=None,
+    location_ids=None,
+    last_session_text=None,
+    user_prompt=None,
+    ai_output_v1=None,
+):
+    """Insert an AI run and return its new ID."""
+
+    conn = get_connection()
+
+    result = conn.execute(
+        """
+        INSERT INTO ai_runs (
+            campaign_id,
+            party_ids,
+            npc_ids,
+            location_ids,
+            last_session_text,
+            user_prompt,
+            ai_output_v1
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?);
+        """,
+        (
+            campaign_id,
+            party_ids,
+            npc_ids,
+            location_ids,
+            last_session_text,
+            user_prompt,
+            ai_output_v1,
+        ),
     )
 
     conn.commit()
@@ -400,6 +479,17 @@ def get_party_member_by_id(campaign_id, member_id):
     }
 
 
+def get_party_members_by_ids(campaign_id, member_ids):
+    """Return only the party members whose IDs are in member_ids."""
+
+    selected = []
+    for member_id in member_ids:
+        member = get_party_member_by_id(campaign_id, member_id)
+        if member is not None:
+            selected.append(member)
+    return selected
+
+
 def get_npcs_for_campaign(campaign_id):
     """Return all NPCs for one campaign."""
 
@@ -506,6 +596,77 @@ def get_location_by_id(location_id):
         return None
 
     return {"id": row[0], "name": row[1], "location_type": row[2], "notes": row[3]}
+
+
+def get_ai_run_by_id(ai_run_id):
+    """Return one AI run by id, or None."""
+
+    conn = get_connection()
+    row = conn.execute(
+        """
+        SELECT
+            id,
+            campaign_id,
+            party_ids,
+            npc_ids,
+            location_ids,
+            last_session_text,
+            user_prompt,
+            ai_output_v1,
+            feedback_text,
+            ai_output_v2,
+            created_at
+        FROM ai_runs
+        WHERE id = ?;
+        """,
+        (ai_run_id,),
+    ).fetchone()
+    conn.close()
+
+    if row is None:
+        return None
+
+    return {
+        "id": row[0],
+        "campaign_id": row[1],
+        "party_ids": row[2],
+        "npc_ids": row[3],
+        "location_ids": row[4],
+        "last_session_text": row[5],
+        "user_prompt": row[6],
+        "ai_output_v1": row[7],
+        "feedback_text": row[8],
+        "ai_output_v2": row[9],
+        "created_at": row[10],
+    }
+
+
+def update_ai_run_feedback(ai_run_id, feedback_text, ai_output_v2):
+    """Update one AI run with feedback and a refined output. Returns True if updated."""
+
+    conn = get_connection()
+    result = conn.execute(
+        """
+        UPDATE ai_runs
+        SET feedback_text = ?, ai_output_v2 = ?
+        WHERE id = ?;
+        """,
+        (feedback_text, ai_output_v2, ai_run_id),
+    )
+    conn.commit()
+    conn.close()
+    return result.rowcount > 0
+
+
+def get_locations_by_ids(location_ids):
+    """Return only the locations whose IDs are in location_ids."""
+
+    selected = []
+    for location_id in location_ids:
+        location = get_location_by_id(location_id)
+        if location is not None:
+            selected.append(location)
+    return selected
 
 
 # -------------------------

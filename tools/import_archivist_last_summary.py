@@ -1,3 +1,7 @@
+"""
+This tool imports the latest session summary from the Archivist API
+and saves it as a new session in the local database.
+"""
 import os
 import sys
 import requests
@@ -27,6 +31,7 @@ def _archivist_get(path: str, params: dict | None = None) -> dict:
 
 
 def find_archivist_campaign_id_by_title(title: str) -> str:
+    """Find the ID of an Archivist campaign by its title."""
     # GET /v1/campaigns
     data = _archivist_get("/campaigns", params={"page": 1, "size": 50})
     for camp in data.get("data", []):
@@ -36,6 +41,7 @@ def find_archivist_campaign_id_by_title(title: str) -> str:
 
 
 def get_latest_session_summary(archivist_campaign_id: str) -> tuple[str, str]:
+    """Fetch the latest session summary for a given Archivist campaign."""
     # GET /v1/sessions?campaign_id=...
     data = _archivist_get("/sessions", params={"campaign_id": archivist_campaign_id, "page": 1, "size": 50})
     sessions = data.get("data", [])
@@ -43,7 +49,7 @@ def get_latest_session_summary(archivist_campaign_id: str) -> tuple[str, str]:
     if not sessions:
         raise RuntimeError("Keine Sessions in Archivist gefunden.")
 
-    # „Letzte Session“: wir nehmen die mit der neuesten session_date (Fallback created_at)
+    # "Latest session": we take the one with the newest session_date (fallback created_at)
     def sort_key(s: dict) -> str:
         return s.get("session_date") or s.get("created_at") or ""
 
@@ -53,17 +59,18 @@ def get_latest_session_summary(archivist_campaign_id: str) -> tuple[str, str]:
     summary = latest.get("summary") or ""
 
     if not summary.strip():
-        raise RuntimeError("Die letzte Archivist-Session hat keine summary (oder sie ist leer).")
+        raise RuntimeError("The latest Archivist session has no summary (or it is empty).")
 
     return session_title, summary
 
 
 def find_local_campaign_id_by_name(name: str) -> int:
+    """Find the local database ID for a campaign by its name."""
     campaigns = data_mgr.get_all_campaigns()
     for c in campaigns:
         if c["name"] == name:
             return int(c["id"])
-    raise RuntimeError(f"Lokale campaign '{name}' nicht gefunden. (SQLite campaigns Tabelle)")
+    raise RuntimeError(f"Local campaign '{name}' not found. (SQLite campaigns table)")
 
 
 def main():
@@ -72,20 +79,20 @@ def main():
 
     campaign_title = "Tales of Aanur"
 
-    # 1) Lokale Campaign-ID (int) finden
+    # 1) Find the local campaign ID
     local_campaign_id = find_local_campaign_id_by_name(campaign_title)
 
-    # 2) Archivist Campaign-ID (string) finden
+    # 2) Find the Archivist campaign ID (string)
     archivist_campaign_id = find_archivist_campaign_id_by_title(campaign_title)
 
-    # 3) Letzte Summary holen
+    # 3) Get the latest summary
     session_title, summary = get_latest_session_summary(archivist_campaign_id)
 
-    # 4) In deine lokale sessions Tabelle speichern (content Feld)
+    # 4) Save it to the local sessions table
     content_to_store = f"Archivist Summary — {session_title}\n\n{summary}"
     new_session_id = data_mgr.add_session(local_campaign_id, content_to_store)
 
-    print(f"OK: gespeichert als lokale Session ID={new_session_id} (campaign_id={local_campaign_id}).")
+    print(f"OK: saved as local Session ID={new_session_id} (campaign_id={local_campaign_id}).")
 
 
 if __name__ == "__main__":

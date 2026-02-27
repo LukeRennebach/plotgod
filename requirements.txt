@@ -1,0 +1,9 @@
+Flask
+requests
+openai
+python-dotenv
+pydantic
+anyio
+httpcore
+httpx
+# antiorm # optional, seen in .venv
