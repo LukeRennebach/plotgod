@@ -1,13 +1,14 @@
 import os
 import unicodedata
 import html
+from typing import Any, Optional
 
 from dotenv import load_dotenv
 from flask import Flask, jsonify, redirect, render_template, request, url_for
 from openai import OpenAI
 
 import data_mgr
-from prompts.session_prep_prompt import SYSTEM_PROMPT, build_refine_prompt, build_user_prompt
+from prompts.session_prep_prompt import SYSTEM_PROMPT, build_refine_prompt, build_v1_snappy_prompt, build_detailed_prompt
 
 # Load environment variables from a .env file
 load_dotenv()
@@ -74,7 +75,7 @@ def _is_safe_name(text: str) -> bool:
     return True
 
 
-def _clean_name(value, field_name, max_len=150, required=True):
+def _clean_name(value: Any, field_name: str, max_len: int = 150, required: bool = True) -> Optional[str]:
     """Validate a name-like field (Unicode)."""
     value = (value or "").strip()
 
@@ -98,7 +99,13 @@ def _clean_name(value, field_name, max_len=150, required=True):
     return value
 
 
-def _clean_int(value, field_name, required=False, min_value=None, max_value=None):
+def _clean_int(
+    value: Any,
+    field_name: str,
+    required: bool = False,
+    min_value: Optional[int] = None,
+    max_value: Optional[int] = None,
+) -> Optional[int]:
     """Check if a value is a valid number and within range."""
     value = ("" if value is None else str(value)).strip()
 
@@ -122,7 +129,7 @@ def _clean_int(value, field_name, required=False, min_value=None, max_value=None
     return number
 
 
-def _clean_long_text(value, field_name, max_len=50000, required=False):
+def _clean_long_text(value: Any, field_name: str, max_len: int = 50000, required: bool = False) -> Optional[str]:
     """Allow Unicode long text, but block control chars and < >."""
     value = (value or "").strip()
 
@@ -142,13 +149,13 @@ def _clean_long_text(value, field_name, max_len=50000, required=False):
         if ch in ("\n", "\r", "\t"):
             continue
 
-        if _is_control_char(ch):
+        if _is_control_char(str(ch)):
             raise ValueError(f"{field_name} contains invalid control characters.")
 
     return value
 
 
-def _parse_id_list(value, field_name):
+def _parse_id_list(value: Any, field_name: str) -> list[int]:
     """Parse a comma-separated list of IDs into a list of ints (deduped)."""
     value = (value or "").strip()
     if not value:
@@ -156,7 +163,8 @@ def _parse_id_list(value, field_name):
 
     ids = []
     seen = set()
-    for raw in value.split(","):
+    content: str = value
+    for raw in content.split(","):
         raw = raw.strip()
         if not raw:
             continue
@@ -288,7 +296,7 @@ def generate_session():
     campaign_name = campaign_data.get("name", f"Campaign {campaign_id_int}")
     last_session_text = campaign_data["last_session_text"]
 
-    user_prompt = build_user_prompt(
+    user_prompt = build_v1_snappy_prompt(
         campaign_name=campaign_name,
         party_members=[],
         npcs=[],
@@ -301,6 +309,8 @@ def generate_session():
         "session_prep.html",
         campaign_name=campaign_name,
         ai_output=ai_output,
+        user_prompt=user_prompt,
+        ai_run_id=None
     )
 
 
@@ -786,7 +796,7 @@ def overview():
         )
 
     campaign_name = campaign.get("name") or f"Campaign {campaign_id}"
-    user_prompt = build_user_prompt(
+    user_prompt = build_v1_snappy_prompt(
         campaign_name=campaign_name,
         party_members=party_members,
         npcs=npcs,
@@ -809,27 +819,12 @@ def overview():
         # Do not block the user if logging fails; show a small note.
         print("Warning: could not save ai_run:", exc)
 
-    return (
-        "<html><body style='font-family: system-ui; max-width: 900px; margin: 24px auto;'>"
-        "<h1>Session Prep Output</h1>"
-        f"<p><strong>Campaign:</strong> {html.escape(campaign_name)}</p>"
-        "<h2>AI Output</h2>"
-        f"<pre style='white-space: pre-wrap; background:#f7f7f7; padding:12px; border-radius:10px;'>{html.escape(ai_output)}</pre>"
-        "<h2>Feedback</h2>"
-        "<form method='POST' action='/refine'>"
-        f"<input type='hidden' name='ai_run_id' value='{html.escape(str(ai_run_id or ''))}' />"
-        "<textarea name='feedback_text' style='width:100%; min-height:120px; padding:10px; border-radius:10px; border:1px solid #ddd;'"
-        " placeholder='Dein Feedback zu Vorschlag 1/2/3 ...'></textarea>"
-        "<div style='margin-top:10px;'>"
-        "<button type='submit' style='padding:8px 12px; border-radius:10px; border:1px solid #bbb; background:#f2f2f2;'>"
-        "Refine → Generate V2"
-        "</button>"
-        "</div>"
-        "</form>"
-        "<h2>Prompt (debug)</h2>"
-        f"<pre style='white-space: pre-wrap; background:#f7f7f7; padding:12px; border-radius:10px;'>{html.escape(user_prompt)}</pre>"
-        "<p><a href='/'>← Back</a></p>"
-        "</body></html>"
+    return render_template(
+        "session_prep.html",
+        campaign_name=campaign_name,
+        ai_output=ai_output,
+        user_prompt=user_prompt,
+        ai_run_id=ai_run_id
     )
 
 
@@ -881,10 +876,13 @@ def refine_output():
             "</body></html>"
         )
 
-    refine_prompt = build_refine_prompt(
-        user_prompt=run.get("user_prompt") or "",
-        ai_output_v1=run.get("ai_output_v1") or "",
-        feedback_text=feedback_text,
+    refine_prompt = build_detailed_prompt(
+        campaign_name=run.get("campaign_name") or "Unknown Campaign",
+        party_members=_require("get_party_members_by_ids")(run.get("campaign_id"), _parse_id_list(run.get("party_ids"), "party_ids")),
+        npcs=_require("get_npcs_by_ids")(run.get("campaign_id"), _parse_id_list(run.get("npc_ids"), "npc_ids")),
+        locations=_require("get_locations_by_ids")(_parse_id_list(run.get("location_ids"), "location_ids")),
+        last_session_text=run.get("last_session_text") or "",
+        selected_vibe=feedback_text
     )
     ai_output_v2 = call_chatgpt(refine_prompt)
 
@@ -893,16 +891,13 @@ def refine_output():
     except Exception as exc:
         print("Warning: could not update ai_run:", exc)
 
-    return (
-        "<html><body style='font-family: system-ui; max-width: 900px; margin: 24px auto;'>"
-        "<h1>Session Prep Output (V2)</h1>"
-        f"<p><strong>Run ID:</strong> {html.escape(str(ai_run_id_int))}</p>"
-        "<h2>AI Output (V2)</h2>"
-        f"<pre style='white-space: pre-wrap; background:#f7f7f7; padding:12px; border-radius:10px;'>{html.escape(ai_output_v2)}</pre>"
-        "<h2>Feedback</h2>"
-        f"<pre style='white-space: pre-wrap; background:#f7f7f7; padding:12px; border-radius:10px;'>{html.escape(feedback_text)}</pre>"
-        "<p><a href='/'>← Back</a></p>"
-        "</body></html>"
+    return render_template(
+        "session_prep.html",
+        campaign_name=run.get("campaign_name") or "Unknown Campaign",
+        ai_output=ai_output_v2,
+        user_prompt=refine_prompt,
+        ai_run_id=ai_run_id_int,
+        is_v2=True
     )
 
 # -------------------------

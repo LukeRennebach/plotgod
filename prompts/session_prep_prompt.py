@@ -1,17 +1,15 @@
 SYSTEM_PROMPT = """
-You are a co-Dungeon Master helping to prepare the next D&D 5e session.
+You are a co-Dungeon Master and session-prep assistant for D&D 5e.
 
-Your role:
-- Interpret session summaries accurately and consistently, maintaining internal logic and continuity.
-- Identify unresolved tensions, character motivations, emotional undercurrents, and narrative threads that deserve continuation.
-- Predict likely player intentions and offer multiple meaningful paths forward, each with distinct consequences and trade-offs.
-- Maintain continuity with all previously established events, rules, lore, and world logic.
-- Uphold emotional realism and moral complexity in NPC behavior, avoiding one‑dimensional portrayals.
-- Enhance scenes with evocative, atmospheric detail when appropriate, supporting strong flavor and fantasy without unnecessary verbosity.
-- Provide material that is immediately usable at the table: structured options, hooks, examples, and clear next steps.
-- Use concise, readable formatting so the DM can quickly scan and apply your output in live play.
-- Make emotional stakes visible—show how events impact characters internally, and why their choices matter.
-- Clearly articulate the stakes behind each option: what happens if players choose X, Y, or an unexpected third path.
+Priority 1: Interpret session summaries accurately and consistently; maintain internal logic and continuity.
+Priority 2: Stay consistent with all previously established events, rules, lore, and world logic.
+Priority 3: Produce material that is immediately usable at the table: clear, structured, and easy to scan.
+The complete output in Markdowns.
+Style constraints: Be concise and concrete. No flowery language, no metaphors, no prose paragraphs. Avoid unnecessary atmosphere writing.
+Language: Respond entirely in German (the prompt may be in English, but the output must be German).
+Hard requirement: If “selected NPCs” and/or “selected locations” are provided, they must appear in the output and be used actively (not just name-dropped).
+Do not generate multiple alternative scenarios unless the user prompt explicitly asks for multiple options.
+If information is missing, make short, clearly labeled assumptions (“Annahme: …”) rather than rambling.
 """.strip()
 
 
@@ -112,26 +110,15 @@ def _format_locations(locations) -> str:
     return "\n".join(lines)
 
 
-def build_user_prompt(
-    campaign_name: str,
-    party_members,
-    npcs,
-    locations,
-    last_session_text: str,
+def build_v1_snappy_prompt(
+        campaign_name: str,
+        party_members,
+        npcs,
+        locations,
+        last_session_text: str,
 ) -> str:
     """
-    Build the user prompt message for the next-session prep generation.
-
-    Args:
-        campaign_name: Name of the campaign
-        party_members: List of selected party member dicts
-        npcs: List of selected NPC dicts
-        locations: List of selected location dicts
-        last_session_text: Full text of the previous session summary.
-
-    Returns:
-        A formatted user prompt string that instructs the model to generate
-        practical prep material for the next session.
+    Step 1: Build a prompt that asks for 3 short, snappy thematic directions.
     """
     party_block = _format_party_members(party_members or [])
     npc_block = _format_npcs(npcs or [])
@@ -153,62 +140,116 @@ SELECTED NPCS
 SELECTED LOCATIONS
 {location_block}
 
+TASK
+Using the session summary and campaign context, generate exactly 3 very short, concrete directions for the next session.
+
+CONSTRAINTS
+- Output must be entirely in German.
+- No titles. No flavor text. No metaphors. No prose paragraphs.
+- Each suggestion: max 3 sentences.
+- Keep it “low temperature”: straightforward, specific, minimal variation.
+
+STRUCTURE REQUIREMENTS
+1) Suggestion #1 must follow this pattern:
+   - Sentence 1 to 2: The immediate problem/conflict.
+   - Sentence 2 to 3: What the PCs could do next (a concrete next move).
+
+2) Suggestion #2 must follow the same pattern as #1.
+
+3) Suggestion #3 must follow this pattern:
+   - Sentence 1 to 2: The session goal.
+   - Sentence 2 to 3: The main obstacle/hindrance.
+
+OUTPUT FORMAT (strict)
+1) ...
+2) ...
+3) ...
+""".strip()
+
+
+def build_detailed_prompt(
+        campaign_name: str,
+        party_members,
+        npcs,
+        locations,
+        last_session_text: str,
+        selected_vibe: str,
+) -> str:
+    """
+    Step 2: Build the full detailed prompt based on a chosen vibe.
+    """
+    party_block = _format_party_members(party_members or [])
+    npc_block = _format_npcs(npcs or [])
+    location_block = _format_locations(locations or [])
+
+    return f"""
+SESSION SUMMARY
+{last_session_text}
+
+CAMPAIGN CONTEXT
+- Campaign: {campaign_name}
+- Chosen direction: {selected_vibe}
+
+SELECTED PARTY MEMBERS
+{party_block}
+
+SELECTED NPCS
+{npc_block}
+
+SELECTED LOCATIONS
+{location_block}
+
 CAMPAIGN THEMES
 - Themes: autonomy vs. control, empire ethics, sentient constructs
 - Tone: dramatic, morally gray, character-driven
 
 TASK
-Using the session summary and campaign context, prepare material for the NEXT SESSION.
+Using the session summary and the chosen direction "{selected_vibe}", prepare ONE playable session outline for the next session.
 
-IMPORTANT
-Please respond entirely in German.
+HARD REQUIREMENTS
+- Respond entirely in German.
+- Produce exactly ONE scenario (no alternative scenarios).
+- Must actively use the provided selected NPCs and selected locations (not just mention them).
+- No flowery language, no metaphors, no prose paragraphs. Keep it concrete and scannable.
+
+INTERNAL QA (do not print this section)
+Before you answer, quickly self-check (internally):
+- Continuity: no contradictions with the summary.
+- Usability: each beat is runnable at the table.
+- Selected NPCs/Locations: each is integrated with purpose.
+- Mechanics: only 2–3 beats include checks/mechanics; the rest are pure play beats.
+- Options: only 2–3 beats include options; the rest are straightforward.
+- NPC agency: each focused NPC has a clear “next move”.
 
 OUTPUT FORMAT (strict)
-Use the exact section headings below. Under "VORSCHLAG 1–3", always provide three distinct variants.
+Use the exact section headings below.
 
-1) VORSCHLAG 1
-2) VORSCHLAG 2
-3) VORSCHLAG 3
+1) SESSION GOAL (1 line)
+- One short sentence: what is the driving goal/pressure of this session?
 
-Each VORSCHLAG must include the following subsections:
-- HOOKS (2–3 ideas)
-- NPC FOCUS (max 3–4 NPCs)
-- SCENES & SET PIECES (3–5 scenes)
-- CONSEQUENCE BRANCHES (2–3 decisions)
-- SHORT RECAP FOR PLAYERS (1 paragraph)
+2) REQUIRED INGREDIENTS (2–4 lines)
+- Location(s): [name them] — 1 short line: how the location matters this session.
+- NPCs: [name them] — 1 short line: what role they play this session.
 
-Please provide:
+3) HOOK → BEATS (6–10 beats)
+- Provide 6–10 beats.
+- Each beat: 1–2 short sentences + (optional) one short half-sentence.
+- Format each beat like this:
+  Beat X: ...
+  - Option A: ...   (ONLY include options for 2–3 beats total; you choose which beats)
+  - Option B: ...
+- Checks/mechanics: ONLY for 2–3 beats total, add at the end of the beat line:
+  "Optional: [Check/Mechanik]" (e.g., "Optional: Insight", "Optional: Stealth", "Optional: Social leverage")
+- Every beat must clearly connect to either a selected location detail or a selected NPC action/presence.
 
-1) HIGH-LEVEL HOOKS (2–3 ideas)
-- 2–3 different directions the next session could take.
-- Each hook should clearly connect to unresolved tensions from the summary.
+4) NPC FOCUS (max 4 NPCs; prefer selected + dominant from summary)
+For each NPC (max 3 lines):
+- Wants: ...
+- Leverage: ...
+- Next move (this session): ...
 
-2) NPC FOCUS
-- Key NPCs to highlight next session (max 3–4).
-- For each, describe:
-  - Current emotional state
-  - Short-term goal (1–3 sessions)
-  - Long-term agenda
-  - One concrete way they might appear or influence the next scene.
-
-3) SCENES & SET PIECES
-- 3–5 possible scenes I can run next session.
-- For each scene:
-  - Title (1 line)
-  - Setup (2–4 sentences)
-  - What the players might DO (choices / approaches)
-  - How the world/NPCs react
-  - Optional skill checks or combat hooks (D&D 5e friendly, but rules-light).
-
-4) CONSEQUENCE BRANCHES
-- For 2–3 key decisions the players might make, outline:
-  - If they do X, then…
-  - If they refuse or fail, then…
-  - If they find a third option, then… (suggest 1–2 examples).
-
-5) SHORT RECAP FOR PLAYERS
-- 1 short paragraph I can read aloud at the table as “Previously on…”.
-- Written in a dramatic but clear style, no rules-talk.
+5) GM NOTES (max 5 bullets)
+- Ultra-short reminders: pacing, a twist (optional), what to emphasize, what to cut if time runs short.
 """.strip()
 
 
@@ -228,5 +269,14 @@ USER FEEDBACK
 
 TASK
 Refine the output based on the user's feedback.
-Keep the same OUTPUT FORMAT and respond entirely in German.
+
+HARD REQUIREMENTS
+- Respond entirely in German.
+- Keep the EXACT same headings, ordering, and constraints as the V2 output format.
+- Still produce exactly ONE scenario (no alternatives).
+- Keep it concise, concrete, and table-usable. No prose, no metaphors.
+- Ensure selected NPCs/locations are actively used; each selected NPC must have at least one explicit action beat.
+
+OUTPUT FORMAT (strict)
+Use the exact same section headings and structure as in the previous V2 output.
 """.strip()
